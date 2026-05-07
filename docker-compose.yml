@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: reddit-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reddit_pipeline
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reddit_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - reddit-net
+
+  pipeline:
+    build: .
+    container_name: reddit-pipeline
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: reddit_pipeline
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    volumes:
+      - ./data:/app/data
+    networks:
+      - reddit-net
+
+volumes:
+  postgres_data:
+
+networks:
+  reddit-net:
+    driver: bridge
