@@ -6,18 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def extract_reddit_data(subreddit="dataengineering", limit=10):
+def extract_reddit_data(subreddit="dataengineering", limit=10, sort="new"):
     """
-    Fetch hot posts from a Reddit subreddit using public JSON endpoint.
+    Fetch posts from a Reddit subreddit using the public JSON endpoint.
     
     Args:
         subreddit: Subreddit name (default: dataengineering)
         limit: Number of posts to fetch (default: 10)
+        sort: Listing type to fetch, e.g. new, hot, top (default: new)
     
     Returns:
         List of post dictionaries
     """
-    url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit={limit}"
+    url = f"https://www.reddit.com/r/{subreddit}/{sort}.json?limit={limit}"
     headers = {
         "User-Agent": "Reddit Data Pipeline (Python requests)"
     }
@@ -69,7 +70,7 @@ def save_to_json(posts, output_dir="data/raw"):
 
 if __name__ == "__main__":
     print("[EXTRACT] Fetching Reddit data...")
-    posts = extract_reddit_data(subreddit="dataengineering", limit=10)
+    posts = extract_reddit_data(subreddit="dataengineering", limit=100, sort="new")
     
     if posts:
         filename = save_to_json(posts)

@@ -23,13 +23,13 @@ dag = DAG(
     'reddit_data_pipeline',
     default_args=default_args,
     description='Extract Reddit data and load to PostgreSQL',
-    schedule_interval='@daily',
+    schedule_interval='*/15 * * * *',
     catchup=False,
 )
 
 def extract_reddit_task(**context):
     """Extract Reddit data and save to JSON"""
-    posts = extract_reddit_data(subreddit="dataengineering", limit=25)
+    posts = extract_reddit_data(subreddit="dataengineering", limit=100, sort="new")
     if posts:
         filename = save_to_json(posts)
         context['task_instance'].xcom_push(key='json_file', value=filename)

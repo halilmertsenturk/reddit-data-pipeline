@@ -36,6 +36,107 @@ services:
     networks:
       - reddit-net
 
+  airflow-init:
+    build: .
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: reddit_pipeline
+      DB_USER: postgres
+      DB_PASSWORD: SecurePostgresPass2024
+      AIRFLOW_HOME: /app/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /app/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:SecurePostgresPass2024@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: Jco1MMjXoBWm_HCIA8TganM7ruCDI5ozNtYPD3pxs9A=
+    command: >
+      sh -c "
+      mkdir -p /app/airflow &&
+      (
+        psql postgresql://postgres:SecurePostgresPass2024@postgres:5432/postgres -tc \"SELECT 1 FROM pg_database WHERE datname = 'airflow'\" | grep -q 1 ||
+        psql postgresql://postgres:SecurePostgresPass2024@postgres:5432/postgres -c \"CREATE DATABASE airflow\"
+      ) &&
+      airflow db migrate &&
+      if ! airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com; then
+        echo 'Airflow admin user already exists';
+      fi
+      "
+    volumes:
+      - airflow_home:/app/airflow
+      - ./dags:/app/dags
+      - ./src:/app/src
+      - ./dbt:/app/dbt
+      - ./data:/app/data
+    networks:
+      - reddit-net
+
+  airflow-webserver:
+    build: .
+    container_name: airflow-webserver
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: reddit_pipeline
+      DB_USER: postgres
+      DB_PASSWORD: SecurePostgresPass2024
+      AIRFLOW_HOME: /app/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /app/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:SecurePostgresPass2024@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: Jco1MMjXoBWm_HCIA8TganM7ruCDI5ozNtYPD3pxs9A=
+    command: airflow webserver
+    ports:
+      - "8080:8080"
+    volumes:
+      - airflow_home:/app/airflow
+      - ./dags:/app/dags
+      - ./src:/app/src
+      - ./dbt:/app/dbt
+      - ./data:/app/data
+    networks:
+      - reddit-net
+
+  airflow-scheduler:
+    build: .
+    container_name: airflow-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: reddit_pipeline
+      DB_USER: postgres
+      DB_PASSWORD: SecurePostgresPass2024
+      AIRFLOW_HOME: /app/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__DAGS_FOLDER: /app/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:SecurePostgresPass2024@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: Jco1MMjXoBWm_HCIA8TganM7ruCDI5ozNtYPD3pxs9A=
+    command: airflow scheduler
+    volumes:
+      - airflow_home:/app/airflow
+      - ./dags:/app/dags
+      - ./src:/app/src
+      - ./dbt:/app/dbt
+      - ./data:/app/data
+    networks:
+      - reddit-net
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -45,6 +146,8 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,6 +157,7 @@ services:
 volumes:
   postgres_data:
   grafana_data:
+  airflow_home:
 
 networks:
   reddit-net:

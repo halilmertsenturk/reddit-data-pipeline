@@ -11,21 +11,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from extract.extract_reddit import extract_reddit_data, save_to_json
 from load.load_reddit import insert_posts, get_total_posts
 
-def run_pipeline(subreddit="dataengineering", limit=10):
+def run_pipeline(subreddit="dataengineering", limit=100, sort="new"):
     """
     Run full ETL pipeline: extract Reddit data and load to PostgreSQL.
     
     Args:
         subreddit: Subreddit to fetch from
         limit: Number of posts to fetch
+        sort: Reddit listing type to fetch
     """
     print("=" * 60)
     print("Reddit Data Pipeline - Extract & Load")
     print("=" * 60)
     
     # Extract
-    print(f"\n[EXTRACT] Fetching {limit} posts from r/{subreddit}...")
-    posts = extract_reddit_data(subreddit=subreddit, limit=limit)
+    print(f"\n[EXTRACT] Fetching {limit} {sort} posts from r/{subreddit}...")
+    posts = extract_reddit_data(subreddit=subreddit, limit=limit, sort=sort)
     
     if not posts:
         print("[ERROR] Extraction failed")
@@ -47,4 +48,4 @@ def run_pipeline(subreddit="dataengineering", limit=10):
     print("\n" + "=" * 60)
 
 if __name__ == "__main__":
-    run_pipeline(subreddit="dataengineering", limit=10)
+    run_pipeline(subreddit="dataengineering", limit=100, sort="new")

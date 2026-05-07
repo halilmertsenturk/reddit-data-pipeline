@@ -53,7 +53,7 @@ Complete end-to-end data engineering pipeline with Apache Airflow orchestration,
 ## Stack
 
 - **Orchestration**: Apache Airflow 2.8.1
-  - Daily DAG runs
+  - 15-minute DAG runs
   - Task dependencies and retries
   - Web UI at http://localhost:8080
   
@@ -91,14 +91,15 @@ docker-compose up --build
 ```
 
 Wait for all services to start (2-3 minutes).
+Airflow metadata DB and admin user are initialized automatically on first run.
 
 ### Access Points
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | Airflow | http://localhost:8080 | admin / admin |
-| Grafana | http://localhost:3000 | admin / admin |
-| PostgreSQL | localhost:5432 | postgres / postgres |
+| Grafana | http://localhost:3000 | admin / SecureGrafanaPass2024 |
+| PostgreSQL | localhost:5432 | postgres / SecurePostgresPass2024 |
 
 ## Services
 
@@ -114,14 +115,14 @@ docker exec reddit-postgres psql -U postgres -d reddit_pipeline -c "SELECT COUNT
 **DAG**: `reddit_data_pipeline`
 
 Tasks:
-1. **extract_reddit**: Fetch 25 hot posts from r/dataengineering
+1. **extract_reddit**: Fetch 100 new posts from r/dataengineering
 2. **load_to_db**: Insert posts into PostgreSQL
 3. **dbt_transformations**: 
    - dbt_parse: Validate models
    - dbt_run: Execute transformations
    - dbt_test: Run data quality tests
 
-Schedule: Daily at 00:00 UTC
+Schedule: Every 15 minutes
 
 Manual trigger:
 ```bash
@@ -153,7 +154,8 @@ docker exec reddit-pipeline dbt test --profiles-dir /app/dbt
 
 **Features**:
 - PostgreSQL datasource preconfigured
-- Build custom dashboards from reddit_posts table
+- Auto-provisioned dashboard from `grafana/dashboard.json`
+- Queries target the transformed `fct_reddit_posts` mart
 - Real-time post metrics
 - Engagement level analysis
 

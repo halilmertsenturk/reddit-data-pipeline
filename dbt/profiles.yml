@@ -5,7 +5,7 @@ reddit_pipeline:
       type: postgres
       host: postgres
       user: postgres
-      password: postgres
+      password: SecurePostgresPass2024
       port: 5432
       dbname: reddit_pipeline
       schema: public
