@@ -1,0 +1,13 @@
+reddit_pipeline:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: reddit_pipeline
+      schema: public
+      threads: 4
+      keepalives_idle: 0

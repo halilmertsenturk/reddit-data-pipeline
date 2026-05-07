@@ -1,221 +1,272 @@
 # Reddit Data Engineering Pipeline
 
-A beginner-friendly data engineering project that extracts real-time data from Reddit and loads it into PostgreSQL.
-
-## Features
-
-- **Extract**: Fetch hot posts from Reddit using public JSON endpoints (no OAuth required)
-- **Load**: Insert data into PostgreSQL with duplicate handling
-- **Docker**: Fully containerized with docker-compose for easy setup
-- **Production-Ready**: Proper error handling, logging, and database transactions
+Complete end-to-end data engineering pipeline with Apache Airflow orchestration, dbt transformations, and Grafana visualization.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  Reddit Public JSON API                     │
-│  (https://reddit.com/r/*/hot.json)          │
-└──────────────┬──────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  Reddit Public JSON API                 │
+└──────────────┬──────────────────────────┘
                │
                ▼
-┌─────────────────────────────────────────────┐
-│  Extract (Python + requests)                │
-│  → Fetch hot posts                          │
-│  → Save to JSON file (data/raw/)            │
-└──────────────┬──────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  Apache Airflow (DAG Orchestration)     │
+│  - Daily extraction at 00:00 UTC        │
+│  - 2 retries on failure                 │
+└──────────────┬──────────────────────────┘
+               │
+        ┌──────┴───────┐
+        │              │
+        ▼              ▼
+    Extract ──► Load ──┐
+        │              │
+        └──────────────┘
                │
                ▼
-┌─────────────────────────────────────────────┐
-│  Load (psycopg2)                            │
-│  → Parse JSON                               │
-│  → Insert into PostgreSQL                   │
-│  → Handle duplicates (ON CONFLICT)          │
-└──────────────┬──────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────┐
-│  PostgreSQL Database                        │
-│  Table: reddit_posts                        │
-└─────────────────────────────────────────────┘
+        ┌─────────────────┐
+        │  PostgreSQL     │ ◄─── Raw Data
+        │  reddit_posts   │
+        └────────┬────────┘
+                 │
+                 ▼
+        ┌─────────────────┐
+        │  dbt Transform  │
+        │  Models & Tests │
+        └────────┬────────┘
+                 │
+        ┌────────┴────────┐
+        │                 │
+        ▼                 ▼
+    Staging  ────►  Marts (Fact Tables)
+    Views            stg_reddit_posts
+                     fct_reddit_posts
+        │
+        ▼
+   ┌──────────────┐
+   │  Grafana     │
+   │  Dashboards  │
+   │  & Alerts    │
+   └──────────────┘
 ```
+
+## Stack
+
+- **Orchestration**: Apache Airflow 2.8.1
+  - Daily DAG runs
+  - Task dependencies and retries
+  - Web UI at http://localhost:8080
+  
+- **Extraction**: Python + Requests
+  - Reddit public JSON endpoints
+  - No OAuth required
+  
+- **Loading**: PostgreSQL + psycopg2
+  - Duplicate handling (ON CONFLICT)
+  - Transaction support
+  
+- **Transformation**: dbt (Data Build Tool)
+  - SQL-based transformations
+  - Staging and mart layers
+  - Data quality tests
+  
+- **Visualization**: Grafana
+  - Real-time dashboards
+  - PostgreSQL datasource integration
+  - Admin UI at http://localhost:3000
+
+## Quick Start
+
+### Prerequisites
+- Docker Desktop
+- 4GB RAM available (Airflow + Grafana + PostgreSQL)
+
+### Run Full Stack
+
+```bash
+git clone https://github.com/halilmertsenturk/reddit-data-pipeline.git
+cd reddit-data-pipeline
+
+docker-compose up --build
+```
+
+Wait for all services to start (2-3 minutes).
+
+### Access Points
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Airflow | http://localhost:8080 | admin / admin |
+| Grafana | http://localhost:3000 | admin / admin |
+| PostgreSQL | localhost:5432 | postgres / postgres |
+
+## Services
+
+### PostgreSQL (Port 5432)
+Raw Reddit data storage and transformations.
+
+```bash
+docker exec reddit-postgres psql -U postgres -d reddit_pipeline -c "SELECT COUNT(*) FROM reddit_posts;"
+```
+
+### Airflow (Port 8080)
+
+**DAG**: `reddit_data_pipeline`
+
+Tasks:
+1. **extract_reddit**: Fetch 25 hot posts from r/dataengineering
+2. **load_to_db**: Insert posts into PostgreSQL
+3. **dbt_transformations**: 
+   - dbt_parse: Validate models
+   - dbt_run: Execute transformations
+   - dbt_test: Run data quality tests
+
+Schedule: Daily at 00:00 UTC
+
+Manual trigger:
+```bash
+docker exec airflow-scheduler airflow dags trigger reddit_data_pipeline
+```
+
+View logs:
+```bash
+docker exec airflow-webserver airflow logs reddit_data_pipeline extract_reddit
+```
+
+### dbt (Runs within Airflow)
+
+Models:
+- **stg_reddit_posts** (VIEW): Staging layer with cleaned data
+- **fct_reddit_posts** (TABLE): Fact table with engagement metrics
+
+Run manually:
+```bash
+docker exec reddit-pipeline dbt run --profiles-dir /app/dbt
+```
+
+Test data quality:
+```bash
+docker exec reddit-pipeline dbt test --profiles-dir /app/dbt
+```
+
+### Grafana (Port 3000)
+
+**Features**:
+- PostgreSQL datasource preconfigured
+- Build custom dashboards from reddit_posts table
+- Real-time post metrics
+- Engagement level analysis
+
+**Sample Queries**:
+
+Top posts by score:
+```sql
+SELECT author, title, score 
+FROM fct_reddit_posts 
+ORDER BY score DESC LIMIT 10
+```
+
+Engagement distribution:
+```sql
+SELECT engagement_level, COUNT(*) 
+FROM fct_reddit_posts 
+GROUP BY engagement_level
+```
+
+## Database Schema
+
+### Raw Layer (reddit_posts)
+| Column | Type | Notes |
+|--------|------|-------|
+| post_id | TEXT PRIMARY KEY | Reddit post ID |
+| subreddit | TEXT | Subreddit name |
+| title | TEXT | Post title |
+| author | TEXT | Post author |
+| score | INT | Upvote score |
+| num_comments | INT | Comment count |
+| created_utc | BIGINT | Unix timestamp |
+| url | TEXT | Post URL |
+
+### Staging Layer (stg_reddit_posts) - VIEW
+Adds `loaded_at` timestamp.
+
+### Mart Layer (fct_reddit_posts) - TABLE
+Adds:
+- `engagement_level`: viral / popular / trending / normal (based on score)
+- `rank_in_subreddit`: Row number within subreddit
 
 ## Project Structure
 
 ```
 reddit-data-pipeline/
-├── pipeline.py                 # Main orchestrator
-├── requirements.txt            # Python dependencies
-├── Dockerfile                  # Docker image definition
-├── docker-compose.yml          # Multi-container setup
-├── .env                        # Database credentials
-├── .gitignore                  # Git exclusions
-├── data/
-│   └── raw/                    # Extracted JSON files (timestamped)
+├── dags/
+│   └── reddit_pipeline_dag.py          # Airflow DAG definition
+├── dbt/
+│   ├── dbt_project.yml                 # dbt config
+│   ├── profiles.yml                    # dbt profiles
+│   └── models/
+│       ├── staging/
+│       │   └── stg_reddit_posts.sql
+│       ├── marts/
+│       │   └── fct_reddit_posts.sql
+│       └── schema.yml                  # dbt tests & docs
+├── grafana/
+│   ├── datasources.yml                 # Grafana data source config
+│   └── grafana.env                     # Grafana environment
 ├── src/
-│   ├── extract/
-│   │   └── extract_reddit.py   # Reddit data extraction
-│   ├── load/
-│   │   └── load_reddit.py      # Database loading
-│   └── utils/
-│       └── db_utils.py         # Database utilities
-└── README.md                   # This file
+│   ├── extract/extract_reddit.py
+│   ├── load/load_reddit.py
+│   └── utils/db_utils.py
+├── data/raw/                           # Extracted JSON files
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+├── .env
+└── README.md
 ```
-
-## Prerequisites
-
-- Docker Desktop installed and running
-- Git
-
-## Quick Start
-
-### Option 1: Docker Compose (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/halilmertsenturk/reddit-data-pipeline.git
-cd reddit-data-pipeline
-
-# Build and run
-docker-compose up --build
-
-# In another terminal, verify data was loaded
-docker exec reddit-postgres psql -U postgres -d reddit_pipeline -c "SELECT COUNT(*) FROM reddit_posts;"
-```
-
-### Option 2: Local Setup (Python + Docker)
-
-```bash
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\activate  # Windows
-source venv/bin/activate # macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start PostgreSQL container
-docker run -d --name reddit-postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgres:15-alpine
-
-# Create database
-docker exec reddit-postgres psql -U postgres -c "CREATE DATABASE reddit_pipeline;"
-
-# Create table
-docker exec reddit-postgres psql -U postgres -d reddit_pipeline -c "
-CREATE TABLE IF NOT EXISTS reddit_posts (
-    post_id TEXT PRIMARY KEY,
-    subreddit TEXT,
-    title TEXT,
-    author TEXT,
-    score INT,
-    num_comments INT,
-    created_utc BIGINT,
-    url TEXT
-);"
-
-# Run pipeline
-python pipeline.py
-```
-
-## Database Schema
-
-### Table: `reddit_posts`
-
-| Column | Type | Notes |
-|--------|------|-------|
-| post_id | TEXT | Primary key (Reddit post ID) |
-| subreddit | TEXT | Subreddit name |
-| title | TEXT | Post title |
-| author | TEXT | Post author |
-| score | INT | Upvote score |
-| num_comments | INT | Number of comments |
-| created_utc | BIGINT | Unix timestamp |
-| url | TEXT | Post URL |
-
-## Usage
-
-### Extract Data
-
-```bash
-python src/extract/extract_reddit.py
-```
-
-Fetches 10 hot posts from r/dataengineering and saves to `data/raw/reddit_posts_<timestamp>.json`
-
-### Load Data
-
-```bash
-python src/load/load_reddit.py data/raw/reddit_posts_<timestamp>.json
-```
-
-Inserts posts from JSON file into PostgreSQL. Duplicates are ignored (ON CONFLICT DO NOTHING).
-
-### Run Full Pipeline
-
-```bash
-python pipeline.py
-```
-
-Orchestrates extract → load in one command.
-
-### Query Data
-
-```bash
-# Connect to database
-docker exec -it reddit-postgres psql -U postgres -d reddit_pipeline
-
-# View posts
-SELECT post_id, title, author, score FROM reddit_posts LIMIT 10;
-
-# Statistics
-SELECT COUNT(*) as total_posts, COUNT(DISTINCT subreddit) as subreddits FROM reddit_posts;
-```
-
-## Environment Variables
-
-Create a `.env` file in the root directory:
-
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=reddit_pipeline
-DB_USER=postgres
-DB_PASSWORD=postgres
-```
-
-For docker-compose, these are set in `docker-compose.yml`.
-
-## Next Steps
-
-- [ ] Add Apache Airflow for workflow orchestration
-- [ ] Add dbt for data transformation
-- [ ] Add data validation and quality checks
-- [ ] Create Grafana dashboard for visualization
-- [ ] Add scheduled runs (cron / Airflow DAGs)
-- [ ] Multi-subreddit support
-- [ ] Data retention policies
 
 ## Troubleshooting
 
-### Connection refused
-Ensure PostgreSQL container is running:
+### Airflow fails to start
 ```bash
-docker ps | grep reddit-postgres
+docker-compose logs airflow-webserver
+docker-compose logs airflow-scheduler
 ```
 
-### Permission denied on data/raw
+### dbt models not running
+Check dbt profiles.yml connection:
 ```bash
-mkdir -p data/raw
-chmod 777 data/raw
+docker exec reddit-pipeline dbt debug --profiles-dir /app/dbt
 ```
 
-### ModuleNotFoundError
-Install dependencies:
+### Grafana won't connect to PostgreSQL
+Verify datasource in Grafana UI → Configuration → Data Sources. Use `postgres` as hostname.
+
+### Port already in use
 ```bash
-pip install -r requirements.txt
+docker-compose down -v
+docker system prune
+docker-compose up --build
 ```
+
+## Next Steps
+
+- [ ] Add data quality alerts in Airflow
+- [ ] Create Grafana dashboards for monitoring
+- [ ] Add Slack notifications on DAG failures
+- [ ] Implement incremental loading for large datasets
+- [ ] Add multi-subreddit support
+- [ ] Deploy to Kubernetes or cloud (AWS/GCP)
+- [ ] Add CI/CD with GitHub Actions
+- [ ] Implement data lineage tracking
+
+## Performance Tips
+
+- Increase Airflow parallelism in docker-compose
+- Use connection pooling in PostgreSQL
+- Optimize dbt models with incremental loading
+- Archive old data to S3/object storage
+- Use Grafana caching for frequent queries
 
 ## License
 
