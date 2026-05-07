@@ -9,6 +9,6 @@ datasources:
     port: 5432
     database: reddit_pipeline
     user: postgres
-    password: postgres
+    password: SecurePostgresPass2024
     jsonData:
       sslmode: disable
